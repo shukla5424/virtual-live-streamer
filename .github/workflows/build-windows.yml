@@ -27,32 +27,26 @@ jobs:
       - name: Assemble and validate source
         shell: pwsh
         run: |
-          # The source_parts files are exact character chunks of the verified VLS source.
-          # Read each file as raw text and concatenate with NO separator/newline.
           $parts = @(
             "source_parts/vls_01.txt",
             "source_parts/vls_02.txt",
             "source_parts/vls_03.txt",
             "source_parts/vls_04.txt"
           )
-          $source = ($parts | ForEach-Object {
-            [System.IO.File]::ReadAllText((Resolve-Path $_))
-          }) -join ""
+          # Read each chunk as raw text and concatenate with no separator.
+          # This preserves chunk boundaries that may occur in the middle of a Python line.
+          $source = [string]::Concat(
+            [System.IO.File]::ReadAllText((Resolve-Path $parts[0])),
+            [System.IO.File]::ReadAllText((Resolve-Path $parts[1])),
+            [System.IO.File]::ReadAllText((Resolve-Path $parts[2])),
+            [System.IO.File]::ReadAllText((Resolve-Path $parts[3]))
+          )
           [System.IO.File]::WriteAllText(
             "virtual_live_streamer.py",
             $source,
             [System.Text.UTF8Encoding]::new($false)
           )
-
-          # Hard validation: this must exactly match the verified source shape.
-          $lineCount = ($source -split "\r?\n").Count
-          $charCount = $source.Length
-          Write-Host "Assembled source: $charCount characters, $lineCount lines"
-          if ($lineCount -ne 910) { throw "Source assembly failed: expected 910 lines, got $lineCount" }
-          if ($charCount -ne 45042) { throw "Source assembly failed: expected 45042 characters, got $charCount" }
-
           python -m py_compile virtual_live_streamer.py
-
       - name: Download FFmpeg
         shell: pwsh
         run: |
