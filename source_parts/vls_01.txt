@@ -1,0 +1,263 @@
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import subprocess, threading, os, sys, json, time, uuid, shutil, platform, stat, queue, io, re, hashlib, urllib.request, urllib.error
+
+APP = "Virtual Live Streamer"
+VERSION = "11.1"
+CFG_DIR = os.path.join(os.path.expanduser("~"), ".virtual_live_streamer")
+CFG = os.path.join(CFG_DIR, "config.json")
+LOG = os.path.join(CFG_DIR, "stream.log")
+os.makedirs(CFG_DIR, exist_ok=True)
+
+# Visual system — intentionally darker / cleaner than the old utility-style UI.
+BG = "#090B10"
+SURFACE = "#11151D"
+SURFACE_2 = "#171C25"
+SURFACE_3 = "#1D2430"
+BORDER = "#202837"
+BORDER_HI = "#344052"
+TEXT = "#F7F9FC"
+MUTED = "#8B95A5"
+FAINT = "#5F6978"
+RED = "#FF3355"
+RED_DARK = "#C92140"
+GREEN = "#25D987"
+AMBER = "#F5B84B"
+BLUE = "#6E8CFF"
+BLACK = "#05070A"
+
+SUPABASE_FUNCTION_URL = "https://wcsbtheojjmkbwnttufc.supabase.co/functions/v1/check-license"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_9f6Zyw7JBQe_BhrfKL4_Dw_zdsAyoQz"
+WEEKLY_PAYMENT_URL = "https://rzp.io/rzp/fGs40bLg"
+MONTHLY_PAYMENT_URL = "https://rzp.io/rzp/HW69fpy"
+
+try:
+    from PIL import Image, ImageTk, ImageOps, ImageDraw
+    PIL_OK = True
+except Exception:
+    PIL_OK = False
+
+
+def load_cfg():
+    try:
+        with open(CFG, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"plan": "Locked", "license_key": "", "video": "", "quality": "720p", "loop": True, "reconnect": True, "license_valid": False, "license_expires_at": ""}
+
+
+def save_cfg(data):
+    try:
+        with open(CFG, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
+def find_bundled():
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    exe = "ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg"
+    candidates = [os.path.join(base, "bin", exe), os.path.join(base, exe)]
+    for p in candidates:
+        if os.path.isfile(p):
+            try:
+                os.chmod(p, os.stat(p).st_mode | stat.S_IXUSR)
+            except Exception:
+                pass
+            return p
+    return shutil.which(exe)
+
+
+def get_ffmpeg(log=lambda _m: None):
+    p = find_bundled()
+    if p:
+        return p
+    # Development fallback. Customer builds should always bundle FFmpeg.
+    p = shutil.which("ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg")
+    if p:
+        return p
+    if platform.system() == "Darwin":
+        import urllib.request, zipfile
+        arch = platform.machine().lower()
+        url_arch = "arm64" if arch in ("arm64", "aarch64") else "amd64"
+        # Snapshot endpoint is less likely to reject automated build requests than release.
+        url = f"https://ffmpeg.martin-riedl.de/redirect/latest/macos/{url_arch}/snapshot/ffmpeg.zip"
+        cache = os.path.join(CFG_DIR, "bin")
+        target = os.path.join(cache, "ffmpeg")
+        try:
+            os.makedirs(cache, exist_ok=True)
+            log("FFmpeg missing — downloading a local development copy once…")
+            req = urllib.request.Request(url, headers={"User-Agent": "VirtualLiveStreamer/6.0"})
+            with urllib.request.urlopen(req, timeout=45) as r:
+                data = r.read()
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                names = [n for n in z.namelist() if n.endswith("/ffmpeg") or n == "ffmpeg"]
+                if not names:
+                    raise RuntimeError("FFmpeg binary not found in archive")
+                with z.open(names[0]) as src, open(target, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+            os.chmod(target, os.stat(target).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            return target
+        except Exception as e:
+            raise RuntimeError(f"FFmpeg setup failed: {e}. Put bin/ffmpeg in the build package for production.")
+    raise RuntimeError("FFmpeg is not available. Put bin/ffmpeg.exe (Windows) or bin/ffmpeg (Mac) in the build package.")
+
+
+class ModernButton(tk.Canvas):
+    """Custom rounded button so macOS native controls never make the UI look sharp/washed out."""
+    def __init__(self, parent, text, command, bg=SURFACE_3, fg=TEXT, active=SURFACE_3,
+                 padx=14, pady=8, font=("Segoe UI", 9, "bold"), radius=10, **kwargs):
+        super().__init__(parent, bg=parent.cget("bg"), highlightthickness=0, bd=0,
+                         cursor="hand2", height=max(34, pady * 2 + 22), **kwargs)
+        self._command = command; self._bg = bg; self._fg = fg; self._active = active
+        self._state = "normal"; self._font = font; self._text = text; self._radius = radius
+        self._padx = padx; self._pady = pady
+        self.bind("<Configure>", lambda e: self._draw())
+        self.bind("<Button-1>", self._click); self.bind("<Enter>", self._enter); self.bind("<Leave>", self._leave)
+        self._draw()
+
+    def _round_rect(self, x1, y1, x2, y2, r, fill, outline=None, width=1):
+        pts=[x1+r,y1,x2-r,y1,x2,y1,x2,y1+r,x2,y2-r,x2,y2,x2-r,y2,x1+r,y2,x1,y2,x1,y2-r,x1,y1+r,x1,y1]
+        return self.create_polygon(pts, smooth=True, splinesteps=18, fill=fill, outline=outline, width=width)
+
+    def _draw(self):
+        self.delete("all")
+        w=max(40,self.winfo_width()); h=max(34,self.winfo_height())
+        fill=self._bg if self._state!="disabled" else "#151B24"
+        fg=self._fg if self._state!="disabled" else FAINT
+        self._round_rect(1,1,w-1,h-1,min(self._radius,h//2),fill,BORDER if self._state!="disabled" else "#1B222D",1)
+        self.create_text(w/2,h/2,text=self._text,fill=fg,font=self._font,justify="center")
+
+    def _click(self,_=None):
+        if self._state!="disabled" and self._command: self._command()
+    def _enter(self,_=None):
+        if self._state!="disabled": self._bg=self._active; self._draw()
+    def _leave(self,_=None):
+        if self._state!="disabled":
+            # active color is only hover state; recover original from stored base
+            self._bg=getattr(self,"_base_bg",self._bg); self._draw()
+    def config(self, cnf=None, **kwargs):
+        if cnf: kwargs.update(cnf)
+        state=kwargs.pop("state",None)
+        if "text" in kwargs: self._text=kwargs.pop("text")
+        if "bg" in kwargs: self._bg=kwargs.pop("bg"); self._base_bg=self._bg
+        if "fg" in kwargs: self._fg=kwargs.pop("fg")
+        if "activebackground" in kwargs: self._active=kwargs.pop("activebackground")
+        if "font" in kwargs: self._font=kwargs.pop("font")
+        if state is not None: self._state=state
+        if kwargs: super().config(**kwargs)
+        self._draw()
+    def cget(self,key):
+        if key=="text": return self._text
+        if key=="state": return self._state
+        return super().cget(key)
+
+
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title(f"{APP} {VERSION}")
+        self.geometry("1260x860")
+        self.minsize(1080, 760)
+        self.configure(bg=BG)
+        self.cfg = load_cfg()
+        self.proc = None
+        self.preview_proc = None
+        self.preview_stop = False
+        self.preview_photo = None
+        self.started = None
+        self.stop_flag = False
+        self.q = queue.Queue()
+        self.video = tk.StringVar(value=self.cfg.get("video", ""))
+        self.platform = tk.StringVar(value="YouTube")
+        self.rtmp = tk.StringVar(value="rtmp://a.rtmp.youtube.com/live2")
+        self.key = tk.StringVar()
+        self.quality = tk.StringVar(value=self.cfg.get("quality", "720p"))
+        self.loop = tk.BooleanVar(value=self.cfg.get("loop", True))
+        self.reconnect = tk.BooleanVar(value=self.cfg.get("reconnect", True))
+        self.short_boost = tk.BooleanVar(value=self.cfg.get("short_boost", False))
+        self.license_key = tk.StringVar(value=self.cfg.get("license_key", ""))
+        self.license_valid = bool(self.cfg.get("license_valid", False))
+        self.license_expires_at = self.cfg.get("license_expires_at", "")
+        self.device_id = self.get_device_id()
+        self.license_gate = None
+        self.status = tk.StringVar(value="READY")
+        self.duration = tk.StringVar(value="00:00:00")
+        self.bitrate = tk.StringVar(value="—")
+        self.fps = tk.StringVar(value="—")
+        self.dropped = tk.StringVar(value="0")
+        self.video_name = tk.StringVar(value="No video selected")
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.build()
+        self.after(100, self.flush_log)
+        self.after(1000, self.tick)
+        if self.video.get() and os.path.isfile(self.video.get()):
+            self.video_name.set(os.path.basename(self.video.get()))
+            self.after(250, self.start_preview)
+        self.after(350, self.enforce_license_gate)
+
+    # ---------- visual helpers ----------
+    def label(self, parent, text=None, fg=TEXT, size=10, bold=False, bg=None, **kw):
+        return tk.Label(parent, text=text or "", fg=fg, bg=bg or parent.cget("bg"),
+                        font=("Segoe UI", size, "bold" if bold else "normal"), **kw)
+
+    def button(self, parent, text, command, bg=SURFACE_3, fg=TEXT, active=None, padx=14, pady=8, size=9, bold=True):
+        return ModernButton(parent, text=text, command=command, bg=bg, fg=fg,
+                            active=active or bg, padx=padx, pady=pady,
+                            font=("Segoe UI", size, "bold" if bold else "normal"))
+
+    def card(self, parent, **pack):
+        outer = tk.Frame(parent, bg="#0B0F15", bd=0, highlightbackground="#1C2532", highlightthickness=1)
+        outer.pack(**pack)
+        inner = tk.Frame(outer, bg=SURFACE, bd=0, highlightthickness=0)
+        inner.pack(padx=1, pady=1, fill="both", expand=True)
+        return inner
+
+    def section_title(self, parent, title, subtitle=None):
+        row = tk.Frame(parent, bg=SURFACE, height=38)
+        row.pack(fill="x", padx=20, pady=(14, 8))
+        row.pack_propagate(False)
+        self.label(row, title.upper(), fg=TEXT, size=10, bold=True, bg=SURFACE).pack(side="left", pady=5)
+        if subtitle:
+            self.label(row, subtitle, fg=FAINT, size=8, bg=SURFACE).pack(side="right", pady=5)
+
+    def pill(self, parent, text, fg=TEXT, bg=SURFACE_3):
+        return tk.Label(parent, text=text, bg=bg, fg=fg, font=("Segoe UI", 8, "bold"), padx=10, pady=7)
+
+    # ---------- build UI ----------
+    def build(self):
+        self.geometry("1500x920")
+        self.minsize(1180, 760)
+        self.configure(bg=BG)
+
+        # ---------- Header ----------
+        header = tk.Frame(self, bg=BG, height=72)
+        header.pack(fill="x", padx=28, pady=(18, 10))
+        header.pack_propagate(False)
+
+        brand = tk.Frame(header, bg=BG)
+        brand.pack(side="left", fill="y")
+        logo = tk.Canvas(brand, width=42, height=42, bg=BG, highlightthickness=0)
+        logo.pack(side="left", pady=10, padx=(0, 12))
+        logo.create_oval(2, 2, 40, 40, fill=RED, outline="")
+        logo.create_oval(12, 12, 30, 30, fill=BG, outline="")
+        self.label(brand, "VIRTUAL LIVE", size=18, bold=True, bg=BG).pack(side="left", pady=13)
+        self.label(brand, "STREAMER", fg=RED, size=18, bold=True, bg=BG).pack(side="left", padx=(6, 0), pady=13)
+
+        hr = tk.Frame(header, bg=BG)
+        hr.pack(side="right", fill="y")
+        self.pill(hr, "●  VERTICAL 9:16", fg=GREEN, bg="#10271F").pack(side="left", pady=13, padx=(0, 10))
+        self.button(hr, f"{self.cfg.get('plan','Locked')}  ·  LICENSE", self.plans,
+                    bg=SURFACE_2, fg=TEXT, active=SURFACE_3, padx=16, pady=8, size=8).pack(side="left", pady=10)
+
+        # ---------- Workspace ----------
+        body = tk.Frame(self, bg=BG)
+        body.pack(fill="both", expand=True, padx=28, pady=(0, 12))
+        body.columnconfigure(0, weight=25, minsize=340)
+        body.columnconfigure(1, weight=27, minsize=400)
+        body.columnconfigure(2, weight=48, minsize=540)
+        body.rowconfigure(0, weight=1)
+
+        # SOURCE
+        left = self.card(body, side="left", fill="both", expand=True, padx=(0, 9))
+        self.s
