@@ -8,7 +8,6 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,8 +32,6 @@ jobs:
             "source_parts/vls_03.txt",
             "source_parts/vls_04.txt"
           )
-          # Read each chunk as raw text and concatenate with no separator.
-          # This preserves chunk boundaries that may occur in the middle of a Python line.
           $source = [string]::Concat(
             [System.IO.File]::ReadAllText((Resolve-Path $parts[0])),
             [System.IO.File]::ReadAllText((Resolve-Path $parts[1])),
@@ -46,7 +43,95 @@ jobs:
             $source,
             [System.Text.UTF8Encoding]::new($false)
           )
+
+          @'
+          from pathlib import Path
+
+          p = Path("virtual_live_streamer.py")
+          s = p.read_text(encoding="utf-8")
+          out = []
+          i = 0
+          quote = None
+          triple = False
+          escaped = False
+          comment = False
+
+          while i < len(s):
+              c = s[i]
+
+              if comment:
+                  out.append(c)
+                  if c == "\n":
+                      comment = False
+                  i += 1
+                  continue
+
+              if quote is None:
+                  if c == "#":
+                      comment = True
+                      out.append(c)
+                      i += 1
+                      continue
+                  if c in ("'", '"'):
+                      if s.startswith(c * 3, i):
+                          quote = c
+                          triple = True
+                          out.append(c * 3)
+                          i += 3
+                      else:
+                          quote = c
+                          triple = False
+                          escaped = False
+                          out.append(c)
+                          i += 1
+                      continue
+                  out.append(c)
+                  i += 1
+                  continue
+
+              if triple:
+                  if s.startswith(quote * 3, i):
+                      out.append(quote * 3)
+                      i += 3
+                      quote = None
+                      triple = False
+                  else:
+                      out.append(c)
+                      i += 1
+                  continue
+
+              if escaped:
+                  out.append(c)
+                  escaped = False
+                  i += 1
+                  continue
+
+              if c == "\\":
+                  out.append(c)
+                  escaped = True
+                  i += 1
+                  continue
+
+              if c == quote:
+                  out.append(c)
+                  quote = None
+                  i += 1
+                  continue
+
+              if c == "\n":
+                  out.append("\\n")
+                  i += 1
+                  continue
+
+              out.append(c)
+              i += 1
+
+          p.write_text("".join(out), encoding="utf-8")
+          '@ | Set-Content repair_source.py -Encoding utf8
+
+          python repair_source.py
           python -m py_compile virtual_live_streamer.py
+
       - name: Download FFmpeg
         shell: pwsh
         run: |
