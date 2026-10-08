@@ -23,18 +23,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Assemble exact source
+      - name: Validate source
         shell: pwsh
         run: |
-          $source = [string]::Concat(
-            [System.IO.File]::ReadAllText((Resolve-Path "source_parts/vls_01.txt")),
-            [System.IO.File]::ReadAllText((Resolve-Path "source_parts/vls_02.txt"))
-          )
-          [System.IO.File]::WriteAllText(
-            "virtual_live_streamer.py",
-            $source,
-            [System.Text.UTF8Encoding]::new($false)
-          )
           python -m py_compile virtual_live_streamer.py
 
       - name: Download FFmpeg
