@@ -260,4 +260,395 @@ class App(tk.Tk):
 
         # SOURCE
         left = self.card(body, side="left", fill="both", expand=True, padx=(0, 9))
-        self.s
+        self.section_title(left, "SOURCE", "VIDEO INPUT")
+
+        add = tk.Frame(left, bg="#151B25", height=245, highlightbackground="#293445", highlightthickness=1)
+        add.pack(fill="x", padx=18, pady=(0, 16))
+        add.pack_propagate(False)
+        self.label(add, "+", fg=RED, size=34, bold=True, bg="#151B25").pack(pady=(27, 0))
+        self.label(add, "ADD VERTICAL VIDEO", fg=TEXT, size=11, bold=True, bg="#151B25").pack(pady=(1, 0))
+        self.label(add, "Drop a video here or browse your computer", fg=MUTED, size=8, bg="#151B25").pack(pady=(7, 0))
+        self.label(add, "MP4   ·   MOV   ·   MKV   ·   WEBM", fg=FAINT, size=8, bg="#151B25").pack(pady=(7, 14))
+        self.button(add, "BROWSE VIDEO", self.browse, bg=RED, fg="#FFFFFF", active=RED_DARK,
+                    padx=28, pady=9, size=9).pack(fill="x", padx=30)
+
+        filebox = tk.Frame(left, bg="#0D1219", highlightbackground="#222C3A", highlightthickness=1)
+        filebox.pack(fill="x", padx=18, pady=(0, 18))
+        self.label(filebox, "SELECTED VIDEO", fg=FAINT, size=7, bold=True, bg="#0D1219").pack(anchor="w", padx=14, pady=(12, 5))
+        self.label(filebox, textvariable=self.video_name, fg=TEXT, size=9, bold=True, bg="#0D1219",
+                   anchor="w", wraplength=380, justify="left").pack(fill="x", padx=14, pady=(0, 14))
+
+        self.label(left, "PLAYBACK", fg=FAINT, size=8, bold=True, bg=SURFACE).pack(anchor="w", padx=18, pady=(0, 8))
+        self.loop_btn = self.toggle_button(left, "LOOP VIDEO", self.loop)
+        self.loop_btn.pack(fill="x", padx=18, pady=(0, 8))
+        self.reconnect_btn = self.toggle_button(left, "AUTO RECONNECT", self.reconnect)
+        self.reconnect_btn.pack(fill="x", padx=18, pady=(0, 8))
+        self.short_boost_btn = self.toggle_button(left, "VERTICAL LIVE BOOST", self.short_boost)
+        self.short_boost_btn.pack(fill="x", padx=18, pady=(0, 8))
+
+        info = tk.Frame(left, bg="#0D1219", highlightbackground="#222C3A", highlightthickness=1)
+        info.pack(side="bottom", fill="x", padx=18, pady=18)
+        self.label(info, "STREAM ENGINE", fg=FAINT, size=7, bold=True, bg="#0D1219").pack(anchor="w", padx=14, pady=(11, 0))
+        self.label(info, "FFmpeg  ·  H.264 / AAC", fg=TEXT, size=8, bg="#0D1219").pack(anchor="w", padx=14, pady=(5, 0))
+        self.label(info, "9:16 canvas  ·  30 FPS", fg=MUTED, size=8, bg="#0D1219").pack(anchor="w", padx=14, pady=(3, 11))
+
+        # PREVIEW
+        center = self.card(body, side="left", fill="both", expand=True, padx=9)
+        top = tk.Frame(center, bg=SURFACE)
+        top.pack(fill="x", padx=20, pady=(16, 10))
+        self.label(top, "LIVE PREVIEW", size=10, bold=True, bg=SURFACE).pack(side="left")
+        self.label(top, "VERTICAL CANVAS  ·  9:16", fg=FAINT, size=8, bold=True, bg=SURFACE).pack(side="right")
+
+        stage = tk.Frame(center, bg="#0A0E14", highlightbackground="#1F2936", highlightthickness=1)
+        stage.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+        stage.bind("<Configure>", self._resize_preview_stage)
+
+        self.preview_stage = stage
+        self.phone_shadow = tk.Frame(stage, bg="#020304", highlightthickness=0)
+        self.phone_outer = tk.Frame(stage, bg="#263141", highlightthickness=0)
+        self.phone_inner = tk.Frame(self.phone_outer, bg="#10151D", highlightthickness=0)
+        self.screen = tk.Frame(self.phone_inner, bg=BLACK, highlightthickness=0)
+        self.screen.pack(expand=True, padx=12, pady=12)
+        self.screen.pack_propagate(False)
+        self.preview_label = tk.Label(self.screen, text="SELECT A VERTICAL VIDEO
+
+9 : 16", bg=BLACK, fg=MUTED,
+                                      font=("Segoe UI", 10, "bold"), justify="center")
+        self.preview_label.pack(fill="both", expand=True)
+        self.live_badge = tk.Label(self.screen, text="● READY", bg="#1B2230", fg=MUTED,
+                                   font=("Segoe UI", 8, "bold"), padx=11, pady=5)
+        self.live_badge.place(relx=.5, rely=.025, anchor="n")
+        self.notch = tk.Frame(self.phone_inner, bg="#05070A", height=9)
+        self.notch.place(relx=.5, rely=.012, anchor="n", width=82)
+        self._resize_preview_stage()
+        self.label(center, "LOCAL SOURCE PREVIEW  ·  SAME 9:16 CANVAS SENT TO RTMP",
+                   fg=FAINT, size=7, bold=True, bg=SURFACE).pack(pady=(0, 14))
+
+        # RIGHT
+        right = tk.Frame(body, bg=BG)
+        right.pack(side="left", fill="both", expand=True)
+
+        dest = self.card(right, side="top", fill="x", expand=False, pady=(0, 9))
+        self.section_title(dest, "DESTINATION", "RTMP OUTPUT")
+        grid = tk.Frame(dest, bg=SURFACE)
+        grid.pack(fill="x", padx=20, pady=(0, 16))
+        grid.columnconfigure(1, weight=1)
+        self.make_combo(grid, "PLATFORM", self.platform, ["YouTube", "Custom RTMP"], 0)
+        self.make_entry(grid, "RTMP URL", self.rtmp, 1)
+        self.make_entry(grid, "STREAM KEY", self.key, 2, secret=True)
+        self.platform.trace_add("write", lambda *_: self.platform_changed())
+
+        quality = self.card(right, side="top", fill="x", expand=False, pady=(0, 9))
+        self.section_title(quality, "OUTPUT QUALITY", "VERTICAL")
+        qrow = tk.Frame(quality, bg=SURFACE)
+        qrow.pack(fill="x", padx=20, pady=(0, 16))
+        self.quality_buttons = {}
+        for q, desc in [("720p", "720 × 1280   ·   30 FPS"), ("1080p", "1080 × 1920   ·   30 FPS")]:
+            b = self.button(qrow, f"{q}
+{desc}", lambda x=q: self.select_quality(x),
+                            bg=SURFACE_2, fg=MUTED, active=SURFACE_3, padx=10, pady=10, size=9)
+            b.pack(side="left", fill="x", expand=True, padx=(0 if q == "720p" else 10, 0))
+            self.quality_buttons[q] = b
+        self.select_quality(self.quality.get())
+
+        control = self.card(right, side="top", fill="x", expand=False, pady=(0, 9))
+        top2 = tk.Frame(control, bg=SURFACE)
+        top2.pack(fill="x", padx=20, pady=(15, 8))
+        self.status_lbl = self.label(top2, "●  READY", fg=MUTED, size=11, bold=True, bg=SURFACE)
+        self.status_lbl.pack(side="left")
+        self.label(top2, "LIVE CONTROL", fg=FAINT, size=8, bold=True, bg=SURFACE).pack(side="right")
+        buttons = tk.Frame(control, bg=SURFACE)
+        buttons.pack(fill="x", padx=20, pady=(2, 17))
+        self.start_btn = self.button(buttons, "●  START LIVE", self.start_clicked, bg=RED, fg="#FFFFFF", active=RED_DARK,
+                                     padx=18, pady=14, size=11)
+        self.start_btn.pack(fill="x")
+        self.stop_btn = self.button(buttons, "■  STOP STREAM", self.stop_clicked, bg="#202938", fg=MUTED,
+                                    active="#293444", padx=18, pady=11, size=9)
+        self.stop_btn.pack(fill="x", pady=(9, 0))
+        self.stop_btn.config(state="disabled")
+
+        log_card = self.card(right, side="top", fill="both", expand=True)
+        self.section_title(log_card, "ACTIVITY", "FFMPEG")
+        self.logbox = tk.Text(log_card, height=7, bg="#07090D", fg="#C9D1DD", insertbackground=TEXT,
+                              relief="flat", bd=0, highlightthickness=1, highlightbackground="#1F2936",
+                              font=("Menlo", 8), padx=12, pady=10)
+        self.logbox.pack(fill="both", expand=True, padx=20, pady=(0, 16))
+        self.logbox.insert("end", "License required. Choose a plan and activate your license to unlock streaming.\n")
+
+        # FOOTER
+        footer = tk.Frame(self, bg="#0C1118", highlightthickness=1, highlightbackground="#18202C", height=56)
+        footer.pack(fill="x", padx=28, pady=(0, 18))
+        footer.pack_propagate(False)
+        self.stat_chip(footer, "LIVE TIME", self.duration)
+        self.stat_chip(footer, "BITRATE", self.bitrate)
+        self.stat_chip(footer, "FPS", self.fps)
+        self.stat_chip(footer, "DROPPED", self.dropped)
+        self.label(footer, "VERTICAL LIVE ENGINE  ·  V11.1", fg=FAINT, size=8, bg="#0C1118").pack(side="right", padx=20)
+
+    def _resize_preview_stage(self, _event=None):
+        if not hasattr(self, "preview_stage"):
+            return
+        w = max(220, self.preview_stage.winfo_width())
+        h = max(320, self.preview_stage.winfo_height())
+        # Fit a 9:16 phone with comfortable breathing room; never crop the stage.
+        pw = min(int(w * 0.68), int(h * 0.56))
+        ph = int(pw * 16 / 9)
+        if ph > int(h * 0.92):
+            ph = int(h * 0.92)
+            pw = int(ph * 9 / 16)
+        pw = max(170, pw); ph = max(300, ph)
+        outer_w, outer_h = pw + 24, ph + 24
+        x = w // 2; y = h // 2
+        self.phone_shadow.place(x=x+7, y=y+8, anchor="center", width=outer_w, height=outer_h)
+        self.phone_outer.place(x=x, y=y, anchor="center", width=outer_w, height=outer_h)
+        self.phone_inner.place(relx=.5, rely=.5, anchor="center", width=pw, height=ph)
+        self.screen.config(width=max(120, pw-24), height=max(220, ph-24))
+        self.notch.place(relx=.5, rely=.012, anchor="n", width=max(58, int(pw*.24)), height=8)
+
+    def select_quality(self, q):
+        self.quality.set(q)
+        for name, b in self.quality_buttons.items():
+            active = name == q
+            b.config(bg=RED if active else SURFACE_2,
+                      activebackground=RED_DARK if active else SURFACE_3,
+                      fg=TEXT if active else MUTED)
+        self.save_settings()
+
+    def stat_chip(self, parent, title, var):
+        f = tk.Frame(parent, bg="#0D1118")
+        f.pack(side="left", padx=17)
+        self.label(f, title, fg=FAINT, size=7, bold=True, bg="#0D1118").pack(side="left")
+        self.label(f, textvariable=var, fg=TEXT, size=9, bold=True, bg="#0D1118").pack(side="left", padx=(7, 0))
+
+    def toggle_button(self, parent, title, var):
+        b = self.button(parent, "", lambda: self.refresh_toggle(b, var), bg=SURFACE_2, padx=12, pady=8, size=8)
+        b._toggle_title = title
+        b._toggle_var = var
+        self.refresh_toggle(b, var, flip=False)
+        return b
+
+    def refresh_toggle(self, b, var, flip=True):
+        if flip:
+            var.set(not var.get())
+        b.config(text=("✓  " if var.get() else "○  ") + b._toggle_title,
+                 fg=GREEN if var.get() else MUTED,
+                 )
+        self.save_settings()
+
+    def make_combo(self, p, label, var, values, row):
+        self.label(p, label, fg=MUTED, size=8, bold=True, bg=SURFACE).grid(row=row, column=0, sticky="w", pady=6)
+        holder = tk.Frame(p, bg="#0C1118", highlightbackground="#263243", highlightthickness=1)
+        holder.grid(row=row, column=1, columnspan=2, sticky="ew", padx=(16, 0), pady=5)
+        holder.columnconfigure(0, weight=1)
+        b = self.button(holder, var.get(), lambda: self.open_platform_menu(b, var, values),
+                        bg="#0C1118", fg=TEXT, active="#131B27", padx=12, pady=7, size=9, bold=False)
+        b.pack(fill="both", expand=True)
+        b._var = var
+        b._values = values
+        b._label_text = label
+        setattr(self, f"combo_{row}", b)
+
+    def open_platform_menu(self, button, var, values):
+        menu = tk.Menu(self, tearoff=0, bg="#121823", fg=TEXT, activebackground=RED,
+                       activeforeground="#FFFFFF", bd=0, relief="flat", font=("Segoe UI", 9))
+        for value in values:
+            menu.add_command(label=value, command=lambda v=value: self._choose_platform(button, var, v))
+        try:
+            x = button.winfo_rootx()
+            y = button.winfo_rooty() + button.winfo_height()
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+
+    def _choose_platform(self, button, var, value):
+        var.set(value)
+        button.config(text=value)
+        self.platform_changed()
+
+    def make_entry(self, p, label, var, row, secret=False):
+        self.label(p, label, fg=MUTED, size=8, bold=True, bg=SURFACE).grid(row=row, column=0, sticky="w", pady=6)
+        holder = tk.Frame(p, bg="#0C1118", highlightbackground="#263243", highlightthickness=1)
+        holder.grid(row=row, column=1, columnspan=2 if not secret else 1, sticky="ew", padx=(16, 0), pady=5)
+        holder.columnconfigure(0, weight=1)
+        e = tk.Entry(holder, textvariable=var, show="•" if secret else "", bg="#0C1118", fg=TEXT,
+                     insertbackground=TEXT, relief="flat", highlightthickness=0,
+                     font=("Segoe UI", 9), bd=0)
+        e.pack(fill="both", expand=True, padx=11, ipady=7)
+        if secret:
+            show = self.button(p, "SHOW", lambda ent=e: self.toggle_secret(ent), bg="#151C27", fg=MUTED,
+                               active="#202A39", padx=14, pady=7, size=7)
+            show.grid(row=row, column=2, padx=(8, 0), pady=5, sticky="ew")
+
+    def toggle_secret(self, e):
+        e.config(show="" if e.cget("show") else "•")
+
+    # ---------- app logic ----------
+    def save_settings(self):
+        self.cfg["video"] = self.video.get()
+        self.cfg["quality"] = self.quality.get()
+        self.cfg["loop"] = self.loop.get()
+        self.cfg["reconnect"] = self.reconnect.get()
+        self.cfg["short_boost"] = self.short_boost.get()
+        save_cfg(self.cfg)
+
+    def write(self, msg):
+        line = f"[{time.strftime('%H:%M:%S')}] {msg}
+"
+        try:
+            with open(LOG, "a", encoding="utf-8") as f:
+                f.write(line)
+        except Exception:
+            pass
+        self.q.put(line)
+
+    def flush_log(self):
+        try:
+            while True:
+                self.logbox.insert("end", self.q.get_nowait())
+                self.logbox.see("end")
+        except queue.Empty:
+            pass
+        self.after(100, self.flush_log)
+
+    def platform_changed(self):
+        if self.platform.get() == "YouTube":
+            self.rtmp.set("rtmp://a.rtmp.youtube.com/live2")
+
+    def browse(self):
+        f = filedialog.askopenfilename(filetypes=[("Video files", "*.mp4 *.mov *.mkv *.webm *.avi *.m4v"), ("All files", "*.*")])
+        if f:
+            self.video.set(f)
+            self.video_name.set(os.path.basename(f))
+            self.write("✓ Video selected: " + f)
+            self.save_settings()
+            self.start_preview()
+
+    def validate(self):
+        if not self.video.get():
+            return "Select a video file."
+        if not os.path.isfile(self.video.get()):
+            return "Selected video file does not exist."
+        if not self.rtmp.get().strip():
+            return "RTMP URL is empty."
+        if not self.key.get().strip():
+            return "Stream Key is empty."
+        return None
+
+    # ---------- preview ----------
+    def start_preview(self):
+        if not PIL_OK:
+            self.preview_label.config(text="Preview needs Pillow
+(rebuild the app)", image="")
+            return
+        self.stop_preview()
+        path = self.video.get().strip()
+        if not path or not os.path.isfile(path):
+            self.preview_label.config(text="SELECT A VERTICAL VIDEO", image="")
+            return
+        self.preview_stop = False
+        threading.Thread(target=self.preview_worker, args=(path,), daemon=True).start()
+
+    def stop_preview(self):
+        self.preview_stop = True
+        p = self.preview_proc
+        self.preview_proc = None
+        if p and p.poll() is None:
+            try:
+                p.terminate()
+            except Exception:
+                pass
+
+    def preview_worker(self, path):
+        try:
+            ff = get_ffmpeg()
+            # Produce a small MJPEG stream. Parsing JPEG boundaries manually is much more
+            # reliable than repeatedly calling PIL.Image.open() directly on a pipe.
+            vf = "scale=300:533:force_original_aspect_ratio=decrease,pad=300:533:(ow-iw)/2:(oh-ih)/2,fps=10"
+            cmd = [ff, "-hide_banner", "-loglevel", "error", "-stream_loop", "-1", "-i", path,
+                   "-an", "-vf", vf, "-q:v", "6", "-f", "mjpeg", "pipe:1"]
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
+            self.preview_proc = p
+            data = bytearray()
+            while not self.preview_stop:
+                chunk = p.stdout.read(8192)
+                if not chunk:
+                    break
+                data.extend(chunk)
+                while True:
+                    start = data.find(b"\xff\xd8")
+                    if start < 0:
+                        if len(data) > 2_000_000:
+                            data.clear()
+                        break
+                    end = data.find(b"\xff\xd9", start + 2)
+                    if end < 0:
+                        if start > 0:
+                            del data[:start]
+                        break
+                    jpg = bytes(data[start:end + 2])
+                    del data[:end + 2]
+                    try:
+                        im = Image.open(io.BytesIO(jpg)).convert("RGB")
+                        photo = ImageTk.PhotoImage(im)
+                        self.after(0, self.update_preview, photo)
+                    except Exception:
+                        pass
+            try:
+                if p.poll() is None:
+                    p.terminate()
+            except Exception:
+                pass
+        except Exception as e:
+            self.after(0, lambda: self.preview_label.config(text="Preview unavailable", image=""))
+        finally:
+            self.preview_proc = None
+
+    def update_preview(self, photo):
+        if self.preview_stop:
+            return
+        self.preview_photo = photo
+        self.preview_label.config(image=photo, text="")
+
+    # ---------- streaming ----------
+    def start_clicked(self):
+        if self.proc and self.proc.poll() is None:
+            return
+        if not self.license_valid:
+            self.plans()
+            messagebox.showwarning("License Required", "Please activate a valid license before starting a live stream.")
+            return
+        err = self.validate()
+        if err:
+            self.set_status("NOT READY", RED)
+            self.write("✗ " + err)
+            messagebox.showerror("Cannot start", err)
+            return
+        self.save_settings()
+        self.start_btn.config(state="disabled")
+        self.stop_btn.config(state="normal")
+        self.set_status("CONNECTING", AMBER)
+        self.live_badge.config(text="● CONNECTING", fg=AMBER)
+        threading.Thread(target=self.start_worker, daemon=True).start()
+
+    def start_worker(self):
+        try:
+            ff = get_ffmpeg(self.write)
+            q = self.quality.get()
+            size = "720:1280" if q == "720p" else "1080:1920"
+            br = "4500k" if q == "720p" else "6500k"
+            loop = ["-stream_loop", "-1"] if self.loop.get() else []
+            out = self.rtmp.get().rstrip("/") + "/" + self.key.get().strip()
+            # Optional audio mapping: video-only files still stream instead of failing.
+            cmd = [ff, "-hide_banner", "-loglevel", "info", "-re"] + loop + ["-i", self.video.get(),
+                   "-map", "0:v:0", "-map", "0:a:0?", "-vf", f"scale={size}:force_original_aspect_ratio=decrease,pad={size}:(ow-iw)/2:(oh-ih)/2",
+                   "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-b:v", br, "-maxrate", br,
+                   "-bufsize", "9000k", "-pix_fmt", "yuv420p", "-g", "60", "-keyint_min", "60",
+                   "-sc_threshold", "0", "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-f", "flv", out]
+            self.write("Starting vertical RTMP stream…")
+            self.proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, bufsize=1)
+            self.started = time.time()
+            self.stop_flag = False
+            threading.Thread(target=self.read_proc, daemon=True).start()
+        except Exception as e:
+            self.write("✗ START ERROR: " + str(e))
+            self.after(0, self.failed_start)
