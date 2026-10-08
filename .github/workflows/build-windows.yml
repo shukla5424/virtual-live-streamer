@@ -41,7 +41,7 @@ jobs:
       - name: Build EXE
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --windowed --name "Virtual Live Streamer" --add-binary "bin\ffmpeg.exe;bin" virtual_live_streamer.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name "Virtual Live Streamer" --add-binary "bin\ffmpeg.exe;bin" virtual_live_streamer.py
 
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
