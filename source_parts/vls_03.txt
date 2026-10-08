@@ -1,4 +1,17 @@
-textvariable=var, show="•" if secret else "", bg="#0C1118", fg=TEXT,
+        finally:
+            menu.grab_release()
+
+    def _choose_platform(self, button, var, value):
+        var.set(value)
+        button.config(text=value)
+        self.platform_changed()
+
+    def make_entry(self, p, label, var, row, secret=False):
+        self.label(p, label, fg=MUTED, size=8, bold=True, bg=SURFACE).grid(row=row, column=0, sticky="w", pady=6)
+        holder = tk.Frame(p, bg="#0C1118", highlightbackground="#263243", highlightthickness=1)
+        holder.grid(row=row, column=1, columnspan=2 if not secret else 1, sticky="ew", padx=(16, 0), pady=5)
+        holder.columnconfigure(0, weight=1)
+        e = tk.Entry(holder, textvariable=var, show="•" if secret else "", bg="#0C1118", fg=TEXT,
                      insertbackground=TEXT, relief="flat", highlightthickness=0,
                      font=("Segoe UI", 9), bd=0)
         e.pack(fill="both", expand=True, padx=11, ipady=7)
@@ -87,6 +100,8 @@ textvariable=var, show="•" if secret else "", bg="#0C1118", fg=TEXT,
     def preview_worker(self, path):
         try:
             ff = get_ffmpeg()
+            # Produce a small MJPEG stream. Parsing JPEG boundaries manually is much more
+            # reliable than repeatedly calling PIL.Image.open() directly on a pipe.
             vf = "scale=300:533:force_original_aspect_ratio=decrease,pad=300:533:(ow-iw)/2:(oh-ih)/2,fps=10"
             cmd = [ff, "-hide_banner", "-loglevel", "error", "-stream_loop", "-1", "-i", path,
                    "-an", "-vf", vf, "-q:v", "6", "-f", "mjpeg", "pipe:1"]
@@ -122,7 +137,7 @@ textvariable=var, show="•" if secret else "", bg="#0C1118", fg=TEXT,
                     p.terminate()
             except Exception:
                 pass
-        except Exception:
+        except Exception as e:
             self.after(0, lambda: self.preview_label.config(text="Preview unavailable", image=""))
         finally:
             self.preview_proc = None
@@ -162,6 +177,7 @@ textvariable=var, show="•" if secret else "", bg="#0C1118", fg=TEXT,
             br = "4500k" if q == "720p" else "6500k"
             loop = ["-stream_loop", "-1"] if self.loop.get() else []
             out = self.rtmp.get().rstrip("/") + "/" + self.key.get().strip()
+            # Optional audio mapping: video-only files still stream instead of failing.
             cmd = [ff, "-hide_banner", "-loglevel", "info", "-re"] + loop + ["-i", self.video.get(),
                    "-map", "0:v:0", "-map", "0:a:0?", "-vf", f"scale={size}:force_original_aspect_ratio=decrease,pad={size}:(ow-iw)/2:(oh-ih)/2",
                    "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-b:v", br, "-maxrate", br,
@@ -210,104 +226,3 @@ textvariable=var, show="•" if secret else "", bg="#0C1118", fg=TEXT,
 
     def set_live(self):
         self.set_status("LIVE", GREEN)
-        self.live_badge.config(text="● LIVE", fg=GREEN)
-
-    def set_status(self, text, color):
-        self.status.set(text)
-        self.status_lbl.config(text="●  " + text, fg=color)
-
-    def stop_clicked(self):
-        self.stop_flag = True
-        self.started = None
-        if self.proc and self.proc.poll() is None:
-            self.write("Stopping stream…")
-            try:
-                self.proc.terminate()
-            except Exception:
-                pass
-        self.proc = None
-        self.set_status("READY", MUTED)
-        self.live_badge.config(text="● READY", fg=MUTED)
-        self.start_btn.config(state="normal")
-        self.stop_btn.config(state="disabled")
-        self.duration.set("00:00:00")
-
-    def tick(self):
-        if self.started and self.proc and self.proc.poll() is None:
-            self.duration.set(time.strftime("%H:%M:%S", time.gmtime(int(time.time() - self.started))))
-        self.after(1000, self.tick)
-
-    def test_setup(self):
-        try:
-            ff = get_ffmpeg(self.write)
-            r = subprocess.run([ff, "-version"], capture_output=True, text=True, timeout=10)
-            first = (r.stdout or r.stderr).splitlines()[0] if (r.stdout or r.stderr) else "FFmpeg OK"
-            self.write("✓ " + first)
-            messagebox.showinfo("Setup OK", "FFmpeg is ready and the streaming engine can use it.")
-        except Exception as e:
-            messagebox.showerror("Setup Error", str(e))
-
-    def get_device_id(self):
-        raw = f"{platform.system()}|{platform.node()}|{uuid.getnode()}"
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
-
-    def enforce_license_gate(self):
-        if self.license_key.get().strip():
-            if self.check_license(silent=True):
-                return
-        self.license_valid = False
-        self.cfg["license_valid"] = False
-        save_cfg(self.cfg)
-        self.show_license_gate()
-
-    def show_license_gate(self):
-        if self.license_gate is not None and self.license_gate.winfo_exists():
-            self.license_gate.lift()
-            return
-
-        w = tk.Toplevel(self)
-        self.license_gate = w
-        w.title("Activate Virtual Live Streamer")
-        w.geometry("620x680")
-        w.resizable(False, False)
-        w.configure(bg=BG)
-        w.transient(self)
-        w.grab_set()
-        w.protocol("WM_DELETE_WINDOW", self.on_close)
-
-        self.label(w, "VIRTUAL LIVE STREAMER", fg=TEXT, size=19, bold=True, bg=BG).pack(pady=(28, 4))
-        self.label(w, "Choose a plan to unlock the software", fg=MUTED, size=10, bg=BG).pack(pady=(0, 22))
-
-        cards = tk.Frame(w, bg=BG)
-        cards.pack(fill="x", padx=34)
-
-        for title, price, duration, url in [
-            ("WEEKLY", "₹299", "7 DAYS", WEEKLY_PAYMENT_URL),
-            ("MONTHLY", "₹499", "30 DAYS", MONTHLY_PAYMENT_URL),
-        ]:
-            c = tk.Frame(cards, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
-            c.pack(fill="x", pady=6)
-            self.label(c, title, size=11, bold=True, bg=SURFACE).pack(side="left", padx=(18, 10), pady=18)
-            self.label(c, price, fg=TEXT, size=15, bold=True, bg=SURFACE).pack(side="left", padx=5)
-            self.label(c, duration, fg=MUTED, size=8, bold=True, bg=SURFACE).pack(side="left", padx=7)
-            self.button(c, "BUY PLAN", lambda u=url: self.open_url(u), bg=RED, fg="#FFFFFF",
-                        active=RED_DARK, padx=14, pady=8, size=8).pack(side="right", padx=14, pady=12)
-
-        box = tk.Frame(w, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
-        box.pack(fill="x", padx=34, pady=(20, 8))
-        self.label(box, "ALREADY PAID? ACTIVATE YOUR LICENSE", size=10, bold=True, bg=SURFACE).pack(anchor="w", padx=18, pady=(16, 8))
-        self.label(box, "Enter the License Key provided after activation", fg=MUTED, size=8, bg=SURFACE).pack(anchor="w", padx=18)
-        entry = tk.Entry(box, textvariable=self.license_key, bg="#0C1118", fg=TEXT, insertbackground=TEXT,
-                         relief="flat", highlightthickness=1, highlightbackground="#263243", font=("Segoe UI", 10))
-        entry.pack(fill="x", padx=18, pady=(6, 10), ipady=9)
-        self.label(box, "DEVICE ID", fg=FAINT, size=7, bold=True, bg=SURFACE).pack(anchor="w", padx=18)
-        did = tk.Entry(box, bg="#0C1118", fg=MUTED, readonlybackground="#0C1118", relief="flat",
-                       highlightthickness=1, highlightbackground="#263243", font=("Consolas", 8))
-        did.insert(0, self.device_id); did.config(state="readonly")
-        did.pack(fill="x", padx=18, pady=(5, 8), ipady=7)
-        self.button(box, "UNLOCK SOFTWARE", lambda: self.check_license(w), bg=GREEN, fg=BLACK,
-                    active="#20B873", padx=20, pady=10, size=9).pack(fill="x", padx=18, pady=(2, 16))
-
-        self.label(w, "After payment, send your License Key + Device ID to support.\nActivation is manually approved before the software unlocks.",
-                   fg=FAINT, size=8, bg=BG, justify="center").pack(pady=12)
-        entry.focus_set()
