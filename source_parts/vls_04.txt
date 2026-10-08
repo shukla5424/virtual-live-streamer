@@ -1,0 +1,155 @@
+g=BG)
+        cards.pack(fill="x", padx=34)
+
+        for title, price, duration, url in [
+            ("WEEKLY", "₹299", "7 DAYS", WEEKLY_PAYMENT_URL),
+            ("MONTHLY", "₹499", "30 DAYS", MONTHLY_PAYMENT_URL),
+        ]:
+            c = tk.Frame(cards, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
+            c.pack(fill="x", pady=6)
+            self.label(c, title, size=11, bold=True, bg=SURFACE).pack(side="left", padx=(18, 10), pady=18)
+            self.label(c, price, fg=TEXT, size=15, bold=True, bg=SURFACE).pack(side="left", padx=5)
+            self.label(c, duration, fg=MUTED, size=8, bg=SURFACE).pack(side="left", padx=7)
+            self.button(c, "BUY PLAN", lambda u=url: self.open_url(u), bg=RED, fg="#FFFFFF",
+                        active=RED_DARK, padx=14, pady=8, size=8).pack(side="right", padx=14, pady=12)
+
+        box = tk.Frame(w, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
+        box.pack(fill="x", padx=34, pady=(20, 8))
+        self.label(box, "ALREADY PAID? ACTIVATE YOUR LICENSE", size=10, bold=True, bg=SURFACE).pack(anchor="w", padx=18, pady=(16, 8))
+        self.label(box, "Enter the License Key provided after activation", fg=MUTED, size=8, bg=SURFACE).pack(anchor="w", padx=18)
+        entry = tk.Entry(box, textvariable=self.license_key, bg="#0C1118", fg=TEXT, insertbackground=TEXT,
+                         relief="flat", highlightthickness=1, highlightbackground="#263243", font=("Segoe UI", 10))
+        entry.pack(fill="x", padx=18, pady=(6, 10), ipady=9)
+        self.label(box, "DEVICE ID", fg=FAINT, size=7, bold=True, bg=SURFACE).pack(anchor="w", padx=18)
+        did = tk.Entry(box, bg="#0C1118", fg=MUTED, readonlybackground="#0C1118", relief="flat",
+                       highlightthickness=1, highlightbackground="#263243", font=("Consolas", 8))
+        did.insert(0, self.device_id); did.config(state="readonly")
+        did.pack(fill="x", padx=18, pady=(5, 8), ipady=7)
+        self.button(box, "UNLOCK SOFTWARE", lambda: self.check_license(w), bg=GREEN, fg=BLACK,
+                    active="#20B873", padx=20, pady=10, size=9).pack(fill="x", padx=18, pady=(2, 16))
+
+        self.label(w, "After payment, send your License Key + Device ID to support.\nActivation is manually approved before the software unlocks.",
+                   fg=FAINT, size=8, bg=BG, justify="center").pack(pady=12)
+        entry.focus_set()
+
+    def license_status_text(self):
+        if self.license_valid:
+            exp = self.license_expires_at or "active"
+            return f"LICENSE ACTIVE  ·  EXPIRES {exp[:10]}"
+        return "LICENSE REQUIRED  ·  STREAMING LOCKED"
+
+    def open_url(self, url):
+        try:
+            if platform.system() == "Windows":
+                os.startfile(url)
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", url])
+            else:
+                subprocess.Popen(["xdg-open", url])
+        except Exception as e:
+            messagebox.showerror("Open Link", str(e))
+
+    def check_license(self, window=None, silent=False):
+        key = self.license_key.get().strip()
+        if not key:
+            if not silent: messagebox.showwarning("License Key", "Enter your license key first.", parent=window)
+            return False
+        try:
+            payload = json.dumps({"license_key": key, "device_id": self.device_id}).encode("utf-8")
+            req = urllib.request.Request(
+                SUPABASE_FUNCTION_URL,
+                data=payload,
+                headers={"Content-Type": "application/json", "apikey": SUPABASE_PUBLISHABLE_KEY},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=12) as r:
+                result = json.loads(r.read().decode("utf-8"))
+            self.license_valid = bool(result.get("valid"))
+            self.license_expires_at = result.get("expires_at", "") or ""
+            if self.license_valid:
+                self.cfg["license_key"] = key
+                self.cfg["license_valid"] = True
+                self.cfg["license_expires_at"] = self.license_expires_at
+                self.cfg["plan"] = self.cfg.get("plan") if self.cfg.get("plan") not in (None, "Free", "Locked") else "Pro"
+                save_cfg(self.cfg)
+                self.set_status("LICENSE ACTIVE", GREEN)
+                self.write("✓ License verified successfully")
+                if window: window.destroy()
+                if self.license_gate is not None and self.license_gate.winfo_exists():
+                    self.license_gate.grab_release()
+                    self.license_gate.destroy()
+                    self.license_gate = None
+                return True
+            self.cfg["license_valid"] = False
+            save_cfg(self.cfg)
+            reason = result.get("reason", "invalid")
+            self.write("✗ License check failed: " + reason)
+            if not silent:
+                messagebox.showerror("License Not Valid", self.pretty_license_reason(reason), parent=window)
+            return False
+        except Exception as e:
+            if not silent:
+                messagebox.showerror("License Check Failed", "Could not reach the license server. Check your internet connection and try again.", parent=window)
+            self.write("✗ License server error")
+            return False
+
+    def pretty_license_reason(self, reason):
+        return {
+            "license_not_found": "License key was not found.",
+            "not_active": "This license is not active yet.",
+            "expired": "This license has expired.",
+            "device_mismatch": "This license is already activated on another device.",
+        }.get(reason, "The license could not be verified.")
+
+    def plans(self):
+        w = tk.Toplevel(self)
+        w.title("Plans & License")
+        w.geometry("590x560")
+        w.resizable(False, False)
+        w.configure(bg=BG)
+        self.label(w, "Plans & License", size=20, bold=True, bg=BG).pack(pady=(20, 4))
+        self.label(w, self.license_status_text(), fg=GREEN if self.license_valid else AMBER,
+                   size=9, bold=True, bg=BG).pack(pady=(0, 14))
+
+        for title, price, url in [("WEEKLY", "₹299  ·  7 DAYS", WEEKLY_PAYMENT_URL),
+                                  ("MONTHLY", "₹499  ·  30 DAYS", MONTHLY_PAYMENT_URL)]:
+            c = tk.Frame(w, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
+            c.pack(fill="x", padx=28, pady=6)
+            self.label(c, title, size=10, bold=True, bg=SURFACE).pack(side="left", padx=14, pady=(11, 0))
+            self.label(c, price, fg=MUTED, size=9, bg=SURFACE).pack(side="left", padx=6, pady=(11, 0))
+            self.button(c, "BUY", lambda u=url: self.open_url(u), bg=RED, fg="#FFFFFF", active=RED_DARK,
+                        padx=14, pady=6, size=8).pack(side="right", padx=10, pady=8)
+
+        box = tk.Frame(w, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
+        box.pack(fill="x", padx=28, pady=(18, 8))
+        self.label(box, "ACTIVATE LICENSE", size=10, bold=True, bg=SURFACE).pack(anchor="w", padx=16, pady=(14, 8))
+        self.label(box, "License Key", fg=MUTED, size=8, bold=True, bg=SURFACE).pack(anchor="w", padx=16)
+        entry = tk.Entry(box, textvariable=self.license_key, bg="#0C1118", fg=TEXT, insertbackground=TEXT,
+                         relief="flat", highlightthickness=1, highlightbackground="#263243", font=("Segoe UI", 10))
+        entry.pack(fill="x", padx=16, pady=(5, 9), ipady=8)
+        self.label(box, "DEVICE ID  ·  send this ID to support after payment", fg=FAINT, size=7, bold=True, bg=SURFACE).pack(anchor="w", padx=16)
+        did = tk.Entry(box, bg="#0C1118", fg=MUTED, readonlybackground="#0C1118", relief="flat",
+                       highlightthickness=1, highlightbackground="#263243", font=("Consolas", 8))
+        did.insert(0, self.device_id); did.config(state="readonly")
+        did.pack(fill="x", padx=16, pady=(5, 12), ipady=7)
+        self.button(box, "CHECK & ACTIVATE", lambda: self.check_license(w), bg=GREEN, fg=BLACK,
+                    active="#20B873", padx=20, pady=9, size=9).pack(fill="x", padx=16, pady=(0, 16))
+        self.label(w, "After payment, send your License Key + Device ID to support.\nActivation is manually approved from the license dashboard.",
+                   fg=FAINT, size=8, bg=BG, justify="center").pack(pady=10)
+
+    def demo(self, n, w):
+        messagebox.showinfo("License", "Demo activation is disabled. Please purchase and activate a license.", parent=w)
+
+    def on_close(self):
+        self.stop_flag = True
+        self.stop_preview()
+        if self.proc and self.proc.poll() is None:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
+        self.destroy()
+
+
+if __name__ == "__main__":
+    App().mainloop()
