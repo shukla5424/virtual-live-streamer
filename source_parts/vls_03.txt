@@ -1,6 +1,4 @@
-n=2 if not secret else 1, sticky="ew", padx=(16, 0), pady=5)
-        holder.columnconfigure(0, weight=1)
-        e = tk.Entry(holder, textvariable=var, show="•" if secret else "", bg="#0C1118", fg=TEXT,
+textvariable=var, show="•" if secret else "", bg="#0C1118", fg=TEXT,
                      insertbackground=TEXT, relief="flat", highlightthickness=0,
                      font=("Segoe UI", 9), bd=0)
         e.pack(fill="both", expand=True, padx=11, ipady=7)
